@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// type UserInfo struct {
-// 	Guid  string
-// 	Email string
-// 	Ip    string
-// }
+type UserInfo struct {
+	Uuid  string
+	Email string
+	Ip    string
+}
 
 // type Claims struct {
 // 	*jwt.StandardClaims
@@ -59,21 +59,38 @@ func getIP(r *http.Request) (string, error) {
 	return "", fmt.Errorf("No valid ip found")
 }
 
-func createToken(email string) (string, error) {
-	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": email,
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"iat": time.Now().Unix(),
+func createTokenPair(user UserInfo) (string, string, error) {
+	authClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+		"sub":  user.Uuid,
+		"mail": user.Email,
+		"ip":   user.Ip,
+		"iat":  time.Now().Unix(),
+		"exp":  time.Now().Add(15 + time.Minute).Unix(),
 	})
 
-	tokenString, err := claims.SignedString(secretKey)
+	authToken, err := authClaims.SignedString(secretKey)
 	if err != nil {
 		fmt.Printf("%s", err)
-		return "", err
+		return "", "", err
 	}
 
-	fmt.Printf("Token: %+v\n", claims)
-	return tokenString, err
+	fmt.Printf("Auth Token: %+v\n", authClaims)
+
+	// Refresh токен тип произвольный, формат передачи base64,
+	// хранится в базе исключительно в виде bcrypt хеша,
+	// должен быть защищен от изменения на стороне клиента и попыток повторного использования.
+
+	rtClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+		"sub": user.Uuid,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	refreshToken, err := rtClaims.SignedString(secretKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	return authToken, refreshToken, err
 }
 
 func main() {
@@ -83,23 +100,27 @@ func main() {
 
 		uuidClient := generateUUID()
 
-		ip, err := getIP(r)
+		clientIp, err := getIP(r)
 		if err != nil {
 			w.WriteHeader(400)
 			w.Write([]byte("No valid ip"))
 			return
 		}
 
-		fmt.Printf("%s\n%s\n%s\n", email, ip, uuidClient)
+		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
+
+		authUser := UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
 
 		if email == "email" {
-			token, err := createToken(email)
+			aToken, rToken, err := createTokenPair(authUser)
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
 				return
 			}
 
-			w.Write([]byte(token))
+			w.Write([]byte(aToken))
+			w.Write([]byte("\n-----------------\n"))
+			w.Write([]byte(rToken))
 			return
 		}
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
