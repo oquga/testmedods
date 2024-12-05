@@ -3,72 +3,83 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"time"
+	"strings"
 
-	"github.com/golang-jwt/jwt"
+	"testask.com/utils"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
-type UserInfo struct {
-	Guid  string
-	Email string
-	Ip    string
-}
-
-type Claims struct {
-	*jwt.StandardClaims
-	UserInfo
-}
-
-const secretKey = "secret"
-
-func createToken(email string) (string, error) {
-	claims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": email,
-		//"guid": guid
-		//"ip": deviceIp
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"iat": time.Now().Unix(),
-	})
-
-	tokenString, err := claims.SignedString(secretKey)
-	if err != nil {
-		return "", err
-	}
-
-	fmt.Printf("Token: %+v\n", claims)
-	return tokenString, err
-}
-
-// func checkJwt(w http.ResponseWriter, r *http.Request) {
-// 	w.Write([]byte("You have accessed a protected endpoint"))
-// }
+var secretKey = []byte("secret")
 
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		uuidClient := r.FormValue("uuid")
 		email := r.FormValue("email")
-		password := r.FormValue("password")
 
-		fmt.Printf("%s\n", email)
+		clientIp, err := utils.GetIP(r)
+		if err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte("No valid ip"))
+			return
+		}
 
-		if email == "email" && password == "password" {
-			token, err := createToken(email)
+		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
+
+		authUser := utils.UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
+
+		if email == "email" {
+			aToken, rToken, err := utils.CreateTokenPair(authUser)
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
 				return
 			}
 
-			w.Write([]byte(token))
+			w.Write([]byte(aToken))
+			w.Write([]byte("\n-----------------\n"))
+			w.Write([]byte(rToken))
 			return
 		}
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-		// fmt.Fprintf(w, "AUTH")
 	})
 
 	http.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
+		// Access, Refresh токены обоюдно связаны,
+		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
+
+		// В случае, если ip адрес изменился,
+		// при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
 		fmt.Fprintf(w, "REFRESH")
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
+		clientToken := r.Header.Get("Authorization")
+
+		if clientToken == "" {
+			fmt.Fprintf(w, "Authorization Token is required")
+			return
+		}
+
+		claims := jwt.MapClaims{}
+		tokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
+
+		// Parse the claims
+		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return secretKey, nil
+		})
+
+		if err != nil {
+			if err == jwt.ErrSignatureInvalid {
+				fmt.Printf("%s\n", err)
+				return
+			}
+			fmt.Printf("%s\n", err)
+			return
+		}
+
+		for key, val := range claims {
+			fmt.Printf("Key: %v, value: %v\n", key, val)
+		}
 
 	})
 
