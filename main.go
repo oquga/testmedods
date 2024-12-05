@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -77,16 +76,34 @@ func main() {
 			return
 		}
 
-		sub, _ := claims.GetSubject()
+		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
+
+		if err != nil {
+			fmt.Printf("UserNotFound: %s\n", err)
+			return
+		}
+
+		user := storage.UserInfo{Uuid: currentUser.FieldByName("uuid").String()}
 		for key, val := range claims {
 			if key == "email" {
-				if val == reflect.ValueOf(storage.AuthSet[sub]).FieldByName("email").String() {
-					fmt.Printf("Credentials are satisfied\n")
-					return
-				}
+				user.Email = val.(string)
+			}
+			if key == "ip" {
+				user.Ip = val.(string)
 			}
 		}
-		fmt.Printf("Credentials are NOT satisfied\n")
+
+		if user.Email != storage.GetEmail(currentUser) || user.Uuid != storage.GetUUID(currentUser) {
+			fmt.Printf("Credentials are NOT satisfied\n")
+			return
+		}
+
+		if user.Ip != storage.GetIP(currentUser) {
+			fmt.Printf("Malicious activity found\n")
+			return
+		}
+
+		fmt.Printf("Credentials are satisfied\n")
 	})
 
 	http.ListenAndServe(":80", nil)

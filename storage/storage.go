@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"reflect"
+	"time"
+)
 
 var AuthSet = make(map[string]AuthorizedUser)
 
@@ -32,4 +35,33 @@ func SaveAuthorizedUser(uuid string, email string, ip string, timeNow time.Time,
 	}
 
 	AuthSet[uuid] = authorizedUser
+}
+
+func GetUserByUUID(uuid string, err error) (reflect.Value, error) {
+	if err != nil {
+		return reflect.ValueOf("Error"), err
+	}
+
+	user := reflect.ValueOf(AuthSet[uuid])
+	return user, nil
+}
+
+func GetUUID(user reflect.Value) string {
+	return user.FieldByName("uuid").String()
+}
+
+func GetEmail(user reflect.Value) string {
+	return user.FieldByName("email").String()
+}
+
+func GetIP(user reflect.Value) string {
+	return user.FieldByName("ip").String()
+}
+
+func GetRefreshToken(user reflect.Value) string {
+	return user.FieldByName("rToken").String()
+}
+
+func GetRevokedStatus(user reflect.Value) bool {
+	return user.FieldByName("revoked").Bool()
 }
