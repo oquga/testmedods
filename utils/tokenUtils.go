@@ -8,25 +8,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"testask.com/storage"
 )
 
 var SecretKey = []byte("secret")
-
-type UserInfo struct {
-	Uuid  string
-	Email string
-	Ip    string
-}
-
-// type Claims struct {
-// 	*jwt.StandardClaims
-// 	UserInfo
-// }
-
-// func generateUUID() string {
-// 	uuidWithHyphen := uuid.New()
-// 	return uuidWithHyphen.String()
-// }
 
 func GetIP(r *http.Request) (string, error) {
 	//Get IP from the X-REAL-IP header
@@ -58,15 +43,16 @@ func GetIP(r *http.Request) (string, error) {
 	return "", fmt.Errorf("no valid ip found")
 }
 
-func CreateTokenPair(user UserInfo) (string, string, error) {
+func CreateTokenPair(user storage.UserInfo) (string, string, error) {
 	// Access токен тип JWT, алгоритм SHA512, хранить в базе строго запрещено.
+	currentTime := time.Now()
+	// var m [storage.IssuedTokens]bool
 
 	authClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
-		"sub":  user.Uuid,
-		"mail": user.Email,
-		"ip":   user.Ip,
-		"iat":  time.Now().Unix(),
-		"exp":  time.Now().Add(15 + time.Minute).Unix(),
+		"sub":   user.Uuid,
+		"email": user.Email,
+		"ip":    user.Ip,
+		"iat":   currentTime,
 	})
 
 	authToken, err := authClaims.SignedString(SecretKey)
@@ -84,13 +70,16 @@ func CreateTokenPair(user UserInfo) (string, string, error) {
 	rtClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"sub": user.Uuid,
 		"ip":  user.Ip,
-		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 
 	refreshToken, err := rtClaims.SignedString(SecretKey)
 	if err != nil {
 		return "", "", err
 	}
+
+	//add to storage info about user: uuid, email, ip, issuedAt
+
+	storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, refreshToken)
 
 	// Payload токенов должен содержать сведения об ip адресе клиента, которому он был выдан
 	return authToken, refreshToken, err

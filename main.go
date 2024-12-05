@@ -3,14 +3,15 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
-	"testask.com/utils"
-
 	"github.com/golang-jwt/jwt/v5"
+	"testask.com/storage"
+	"testask.com/utils"
 )
 
-var secretKey = []byte("secret")
+var RevokedMap map[string]bool //rToken: true, false
 
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
@@ -26,9 +27,10 @@ func main() {
 
 		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
 
-		authUser := utils.UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
+		authUser := storage.UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
 
-		if email == "email" {
+		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
+
 			aToken, rToken, err := utils.CreateTokenPair(authUser)
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
@@ -47,8 +49,7 @@ func main() {
 		// Access, Refresh токены обоюдно связаны,
 		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
 
-		// В случае, если ip адрес изменился,
-		// при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
+		// В случае, если ip адрес изменился, при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
 		fmt.Fprintf(w, "REFRESH")
 	})
 
@@ -60,12 +61,11 @@ func main() {
 			return
 		}
 
-		claims := jwt.MapClaims{}
 		tokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
-
+		claims := jwt.MapClaims{}
 		// Parse the claims
 		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return secretKey, nil
+			return utils.SecretKey, nil
 		})
 
 		if err != nil {
@@ -77,10 +77,16 @@ func main() {
 			return
 		}
 
+		sub, _ := claims.GetSubject()
 		for key, val := range claims {
-			fmt.Printf("Key: %v, value: %v\n", key, val)
+			if key == "email" {
+				if val == reflect.ValueOf(storage.AuthSet[sub]).FieldByName("email").String() {
+					fmt.Printf("Credentials are satisfied\n")
+					return
+				}
+			}
 		}
-
+		fmt.Printf("Credentials are NOT satisfied\n")
 	})
 
 	http.ListenAndServe(":80", nil)
