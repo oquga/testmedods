@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -8,25 +10,31 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+	"testask.com/storage"
 )
 
 var SecretKey = []byte("secret")
 
-type UserInfo struct {
-	Uuid  string
-	Email string
-	Ip    string
+func CheckTokenHash(token, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(token))
+	return err == nil
 }
 
-// type Claims struct {
-// 	*jwt.StandardClaims
-// 	UserInfo
-// }
+func HashToken(token string) (string, error) {
+	sha256Hasher := sha256.New()
+	sha256Hasher.Write([]byte(token))
+	hashedToken := sha256Hasher.Sum(nil)
 
-// func generateUUID() string {
-// 	uuidWithHyphen := uuid.New()
-// 	return uuidWithHyphen.String()
-// }
+	hexToken := hex.EncodeToString(hashedToken)
+
+	bcryptHash, err := bcrypt.GenerateFromPassword([]byte(hexToken), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	return string(bcryptHash), nil
+}
 
 func GetIP(r *http.Request) (string, error) {
 	//Get IP from the X-REAL-IP header
@@ -58,15 +66,13 @@ func GetIP(r *http.Request) (string, error) {
 	return "", fmt.Errorf("no valid ip found")
 }
 
-func CreateTokenPair(user UserInfo) (string, string, error) {
+func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	// Access токен тип JWT, алгоритм SHA512, хранить в базе строго запрещено.
+	currentTime := time.Now()
 
 	authClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
-		"sub":  user.Uuid,
-		"mail": user.Email,
-		"ip":   user.Ip,
-		"iat":  time.Now().Unix(),
-		"exp":  time.Now().Add(15 + time.Minute).Unix(),
+		"sub":   user.Uuid,
+		"email": user.Email,
 	})
 
 	authToken, err := authClaims.SignedString(SecretKey)
@@ -75,7 +81,7 @@ func CreateTokenPair(user UserInfo) (string, string, error) {
 		return "", "", err
 	}
 
-	fmt.Printf("Auth Token: %+v\n", authClaims)
+	// fmt.Printf("Auth Token: %+v\n", authClaims)
 
 	// Refresh токен тип произвольный, формат передачи base64,
 	// хранится в базе исключительно в виде bcrypt хеша,
@@ -83,14 +89,25 @@ func CreateTokenPair(user UserInfo) (string, string, error) {
 
 	rtClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"sub": user.Uuid,
-		"ip":  user.Ip,
-		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 
 	refreshToken, err := rtClaims.SignedString(SecretKey)
 	if err != nil {
 		return "", "", err
 	}
+
+	//add to storage info about user: uuid, email, ip, issuedAt
+	hashedRefreshToken, err := HashToken(refreshToken)
+	if err != nil {
+		fmt.Println(err)
+		// return "", "", err
+	}
+
+	fmt.Println("RT: " + refreshToken)
+	fmt.Println("Hashed RT: " + hashedRefreshToken)
+
+	// storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, refreshToken)
+	storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, hashedRefreshToken)
 
 	// Payload токенов должен содержать сведения об ip адресе клиента, которому он был выдан
 	return authToken, refreshToken, err

@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
-	"testask.com/utils"
-
 	"github.com/golang-jwt/jwt/v5"
+	"testask.com/storage"
+	"testask.com/utils"
 )
 
-var secretKey = []byte("secret")
+var RevokedMap map[string]bool //rToken: true, false
 
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
@@ -26,17 +26,21 @@ func main() {
 
 		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
 
-		authUser := utils.UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
+		authUser := storage.UserDTO{Uuid: uuidClient, Email: email, Ip: clientIp}
 
-		if email == "email" {
+		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
+
 			aToken, rToken, err := utils.CreateTokenPair(authUser)
+
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
 				return
 			}
 
+			w.Write([]byte("AT:\n"))
 			w.Write([]byte(aToken))
-			w.Write([]byte("\n-----------------\n"))
+			w.Write([]byte("\n------\n"))
+			w.Write([]byte("RT:\n"))
 			w.Write([]byte(rToken))
 			return
 		}
@@ -47,8 +51,7 @@ func main() {
 		// Access, Refresh токены обоюдно связаны,
 		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
 
-		// В случае, если ip адрес изменился,
-		// при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
+		// В случае, если ip адрес изменился, при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
 		fmt.Fprintf(w, "REFRESH")
 	})
 
@@ -60,12 +63,11 @@ func main() {
 			return
 		}
 
-		claims := jwt.MapClaims{}
 		tokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
-
+		claims := jwt.MapClaims{}
 		// Parse the claims
 		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return secretKey, nil
+			return utils.SecretKey, nil
 		})
 
 		if err != nil {
@@ -77,10 +79,34 @@ func main() {
 			return
 		}
 
-		for key, val := range claims {
-			fmt.Printf("Key: %v, value: %v\n", key, val)
+		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
+
+		if err != nil {
+			fmt.Printf("UserNotFound: %s\n", err)
+			return
 		}
 
+		userDTO := storage.UserDTO{Uuid: currentUser.FieldByName("uuid").String()}
+		for key, val := range claims {
+			if key == "email" {
+				userDTO.Email = val.(string)
+			}
+			if key == "ip" {
+				userDTO.Ip = val.(string)
+			}
+		}
+
+		if userDTO.Email != storage.GetEmail(currentUser) || userDTO.Uuid != storage.GetUUID(currentUser) {
+			fmt.Printf("Credentials are NOT satisfied\n")
+			return
+		}
+
+		if userDTO.Ip != storage.GetIP(currentUser) {
+			fmt.Printf("Malicious activity found\n")
+		}
+
+		storage.PrintAuthorizedUser(currentUser)
+		fmt.Printf("Credentials are satisfied\n")
 	})
 
 	http.ListenAndServe(":80", nil)
