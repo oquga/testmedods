@@ -37,11 +37,20 @@ func main() {
 				return
 			}
 
+			cookie := &http.Cookie{
+				Name:  "RefreshToken",
+				Value: rToken,
+				// MaxAge: 300,
+			}
+			http.SetCookie(w, cookie)
+
 			w.Write([]byte("AT:\n"))
 			w.Write([]byte(aToken))
-			w.Write([]byte("\n------\n"))
-			w.Write([]byte("RT:\n"))
-			w.Write([]byte(rToken))
+
+			w.WriteHeader(200)
+			// w.Write([]byte("\n------\n"))
+			// w.Write([]byte("RT:\n"))
+			// w.Write([]byte(rToken))
 			return
 		}
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
@@ -51,19 +60,33 @@ func main() {
 		// Access, Refresh токены обоюдно связаны,
 		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
 
+		clientToken := r.Header.Get("Authorization")
+		if clientToken == "" {
+			fmt.Fprintf(w, "Authorization Token is required")
+			return
+		}
+
+		refreshToken, err := r.Cookie("RefreshToken")
+		if err != nil {
+			fmt.Fprintf(w, "Refresh token is required")
+			return
+		}
+
+		//check is
+
 		// В случае, если ip адрес изменился, при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
-		fmt.Fprintf(w, "REFRESH")
+		fmt.Fprintf(w, refreshToken.String())
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
 		clientToken := r.Header.Get("Authorization")
-
 		if clientToken == "" {
 			fmt.Fprintf(w, "Authorization Token is required")
 			return
 		}
 
 		tokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
+
 		claims := jwt.MapClaims{}
 		// Parse the claims
 		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -96,7 +119,7 @@ func main() {
 			}
 		}
 
-		if userDTO.Email != storage.GetEmail(currentUser) || userDTO.Uuid != storage.GetUUID(currentUser) {
+		if userDTO.Email != storage.GetEmail(currentUser) {
 			fmt.Printf("Credentials are NOT satisfied\n")
 			return
 		}

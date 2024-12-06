@@ -21,7 +21,7 @@ func CheckTokenHash(token, hash string) bool {
 	return err == nil
 }
 
-func HashToken(token string) (string, error) {
+func hashToken(token string) (string, error) {
 	sha256Hasher := sha256.New()
 	sha256Hasher.Write([]byte(token))
 	hashedToken := sha256Hasher.Sum(nil)
@@ -97,7 +97,7 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	}
 
 	//add to storage info about user: uuid, email, ip, issuedAt
-	hashedRefreshToken, err := HashToken(refreshToken)
+	hashedRefreshToken, err := hashToken(refreshToken)
 	if err != nil {
 		fmt.Println(err)
 		// return "", "", err
