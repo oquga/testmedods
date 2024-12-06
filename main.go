@@ -26,18 +26,21 @@ func main() {
 
 		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
 
-		authUser := storage.UserInfo{Uuid: uuidClient, Email: email, Ip: clientIp}
+		authUser := storage.UserDTO{Uuid: uuidClient, Email: email, Ip: clientIp}
 
 		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
 
 			aToken, rToken, err := utils.CreateTokenPair(authUser)
+
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
 				return
 			}
 
+			w.Write([]byte("AT:\n"))
 			w.Write([]byte(aToken))
-			w.Write([]byte("\n-----------------\n"))
+			w.Write([]byte("\n------\n"))
+			w.Write([]byte("RT:\n"))
 			w.Write([]byte(rToken))
 			return
 		}
@@ -83,26 +86,26 @@ func main() {
 			return
 		}
 
-		user := storage.UserInfo{Uuid: currentUser.FieldByName("uuid").String()}
+		userDTO := storage.UserDTO{Uuid: currentUser.FieldByName("uuid").String()}
 		for key, val := range claims {
 			if key == "email" {
-				user.Email = val.(string)
+				userDTO.Email = val.(string)
 			}
 			if key == "ip" {
-				user.Ip = val.(string)
+				userDTO.Ip = val.(string)
 			}
 		}
 
-		if user.Email != storage.GetEmail(currentUser) || user.Uuid != storage.GetUUID(currentUser) {
+		if userDTO.Email != storage.GetEmail(currentUser) || userDTO.Uuid != storage.GetUUID(currentUser) {
 			fmt.Printf("Credentials are NOT satisfied\n")
 			return
 		}
 
-		if user.Ip != storage.GetIP(currentUser) {
+		if userDTO.Ip != storage.GetIP(currentUser) {
 			fmt.Printf("Malicious activity found\n")
-			return
 		}
 
+		storage.PrintAuthorizedUser(currentUser)
 		fmt.Printf("Credentials are satisfied\n")
 	})
 
