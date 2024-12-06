@@ -44,13 +44,10 @@ func main() {
 			}
 			http.SetCookie(w, cookie)
 
-			w.Write([]byte("AT:\n"))
+			// w.Write([]byte("AT:\n"))
 			w.Write([]byte(aToken))
 
 			w.WriteHeader(200)
-			// w.Write([]byte("\n------\n"))
-			// w.Write([]byte("RT:\n"))
-			// w.Write([]byte(rToken))
 			return
 		}
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
@@ -72,10 +69,60 @@ func main() {
 			return
 		}
 
-		//check is
+		aTokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
+
+		claims, err := utils.ParseTokenClaims(aTokenString)
+		if err != nil {
+			fmt.Fprintf(w, "Failed to parse access token")
+			return
+		}
+
+		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
+		if err != nil {
+			fmt.Fprintf(w, "UserNotFound")
+			return
+		}
+
+		if utils.IsAccessTokenExpired(currentUser) {
+			fmt.Fprintf(w, "Access token expired")
+			return
+		}
+
+		if utils.IsRefreshTokenExpired(currentUser) {
+			fmt.Fprintf(w, "Refresh token expired")
+			return
+		}
 
 		// В случае, если ip адрес изменился, при рефреш операции нужно послать email warning на почту юзера (для упрощения можно использовать моковые данные).
-		fmt.Fprintf(w, refreshToken.String())
+		requestIp, err := utils.GetIP(r)
+		if err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte("No valid ip"))
+			return
+		}
+
+		for key, val := range claims {
+			if key == "email" {
+				if val != storage.GetEmail(currentUser) {
+					fmt.Fprintf(w, "NON valid credentials")
+					return
+				}
+			}
+			if key == "ip" {
+				savedIPaddres := storage.GetIP(currentUser)
+				if requestIp != savedIPaddres || val != savedIPaddres {
+					// sendEmail(storage.GetEmail(currentUser))
+					fmt.Fprintf(w, "Suspicious activity")
+					// send email
+				}
+			}
+		}
+
+		// sendEmail("aslankaan460@gmail.com")
+
+		rTokenString := refreshToken.String()
+
+		fmt.Fprintf(w, rTokenString)
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
@@ -134,3 +181,21 @@ func main() {
 
 	http.ListenAndServe(":80", nil)
 }
+
+// func sendEmail(receiver string) {
+// 	// hostname is used by PlainAuth to validate the TLS certificate.
+// 	hostname := "mta.medods.test.com"
+// 	auth := smtp.PlainAuth("", "b10a731b2f948c50", "Yr1ZskVynyHHyKSB3YfDtF7c", hostname)
+
+// 	msg := `
+//   Subject: Testing from GoLang
+
+//   This is the message content!
+//   Thanks
+//   `
+// 	err := smtp.SendMail(hostname+":587", auth, "aslankaan460@gmail.com", []string{receiver},
+// 		[]byte(msg))
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// }

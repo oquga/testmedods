@@ -69,8 +69,16 @@ func GetIP(user reflect.Value) string {
 	return user.FieldByName("ip").String()
 }
 
+func ExpirationAccessToken(user reflect.Value) int64 {
+	return user.FieldByName("aExpiresAt").Int()
+}
+
 func GetRefreshToken(user reflect.Value) string {
 	return user.FieldByName("rToken").String()
+}
+
+func ExpirationRefreshToken(user reflect.Value) int64 {
+	return user.FieldByName("rExpiresAt").Int()
 }
 
 func GetRevokedStatus(user reflect.Value) bool {

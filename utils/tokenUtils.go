@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -73,6 +74,7 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	authClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"sub":   user.Uuid,
 		"email": user.Email,
+		"ip":    user.Ip,
 	})
 
 	authToken, err := authClaims.SignedString(SecretKey)
@@ -111,4 +113,32 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 
 	// Payload токенов должен содержать сведения об ip адресе клиента, которому он был выдан
 	return authToken, refreshToken, err
+}
+
+func ParseTokenClaims(token string) (jwt.MapClaims, error) {
+	claims := jwt.MapClaims{}
+	// Parse the claims
+	_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return SecretKey, nil
+	})
+
+	if err != nil {
+		if err == jwt.ErrSignatureInvalid {
+			fmt.Printf("%s\n", err)
+			return nil, err
+		}
+		fmt.Printf("%s\n", err)
+		return nil, err
+	}
+	return claims, nil
+}
+
+func IsAccessTokenExpired(user reflect.Value) bool {
+	fmt.Printf("Now: %d and AT expires at %d", time.Now().Unix(), storage.ExpirationAccessToken(user))
+	return time.Now().After(time.Unix(storage.ExpirationAccessToken(user), 0).UTC())
+}
+
+func IsRefreshTokenExpired(user reflect.Value) bool {
+	fmt.Printf("Now: %d and RT expires at %d", time.Now().Unix(), storage.ExpirationRefreshToken(user))
+	return time.Now().After(time.Unix(storage.ExpirationRefreshToken(user), 0).UTC())
 }
