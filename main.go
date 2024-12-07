@@ -17,16 +17,16 @@ func main() {
 		uuidClient := r.FormValue("uuid")
 		email := r.FormValue("email")
 
-		clientIp, err := utils.GetIP(r)
+		requestIp, err := utils.GetIP(r)
 		if err != nil {
 			w.WriteHeader(400)
 			w.Write([]byte("No valid ip"))
 			return
 		}
 
-		fmt.Printf("%s\n%s\n%s\n", email, clientIp, uuidClient)
+		fmt.Printf("%s\n%s\n%s\n", email, requestIp, uuidClient)
 
-		authUser := storage.UserDTO{Uuid: uuidClient, Email: email, Ip: clientIp}
+		authUser := storage.UserDTO{Uuid: uuidClient, Email: email, Ip: requestIp}
 
 		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
 
@@ -46,24 +46,9 @@ func main() {
 	})
 
 	http.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
-		// Access, Refresh токены обоюдно связаны,
-		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
-
-		// clientToken := r.Header.Get("Authorization")
-		// if clientToken == "" {
-		// 	fmt.Fprintf(w, "Authorization Token is required")
-		// 	return
-		// }
-
 		accessToken, err := r.Cookie("AccessToken")
 		if err != nil {
 			fmt.Fprintf(w, "Access token is required in cookies")
-			return
-		}
-
-		refreshToken, err := r.Cookie("RefreshToken")
-		if err != nil {
-			fmt.Fprintf(w, "Refresh token is required in cookies")
 			return
 		}
 
@@ -78,11 +63,6 @@ func main() {
 		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
 		if err != nil {
 			fmt.Fprintf(w, "UserNotFound")
-			return
-		}
-
-		if utils.IsAccessTokenExpired(currentUser) {
-			fmt.Fprintf(w, "Access token expired")
 			return
 		}
 
@@ -102,7 +82,7 @@ func main() {
 		for key, val := range claims {
 			if key == "email" {
 				if val != storage.GetEmail(currentUser) {
-					fmt.Fprintf(w, "NON valid credentials")
+					fmt.Fprintf(w, "Email is not credential")
 					return
 				}
 			}
@@ -114,6 +94,12 @@ func main() {
 					// send email
 				}
 			}
+		}
+
+		refreshToken, err := r.Cookie("RefreshToken")
+		if err != nil {
+			fmt.Fprintf(w, "Refresh token is required in cookies")
+			return
 		}
 
 		rTokenString := strings.Join(strings.Split(refreshToken.String(), "RefreshToken="), "")
@@ -152,17 +138,17 @@ func main() {
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
-		clientToken := r.Header.Get("Authorization")
-		if clientToken == "" {
-			fmt.Fprintf(w, "Authorization Token is required")
+		accessToken, err := r.Cookie("AccessToken")
+		if err != nil {
+			fmt.Fprintf(w, "Access token is required in cookies")
 			return
 		}
 
-		tokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
+		aTokenString := strings.Join(strings.Split(accessToken.String(), "AccessToken="), "")
 
 		claims := jwt.MapClaims{}
 		// Parse the claims
-		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(aTokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return utils.SecretKey, nil
 		})
 
@@ -201,8 +187,8 @@ func main() {
 			fmt.Printf("Malicious activity found\n")
 		}
 
-		storage.PrintAuthorizedUser(currentUser)
-		fmt.Printf("Credentials are satisfied\n")
+		fmt.Fprintf(w, storage.PrintAuthorizedUser(currentUser))
+		return
 	})
 
 	http.ListenAndServe(":80", nil)

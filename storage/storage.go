@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"reflect"
 	"time"
 )
@@ -24,13 +23,13 @@ type AuthorizedUser struct {
 	revoked    string
 }
 
-func PrintAuthorizedUser(user reflect.Value) {
-	fmt.Println("---------------")
-	fmt.Println("UUID: " + GetUUID(user) +
-		", \nIP: " + GetIP(user) +
-		", \nEmail: " + GetEmail(user) +
-		", \nHashed RT: " + GetRefreshToken(user) +
-		", \nRevoked Status: " + GetRevokedStatus(user))
+func PrintAuthorizedUser(user reflect.Value) string {
+	return ("---------------") +
+		("\nUUID: " + GetUUID(user) +
+			", \nIP: " + GetIP(user) +
+			", \nEmail: " + GetEmail(user) +
+			", \nHashed RT: " + GetRefreshToken(user) +
+			", \nRevoked Status: " + GetRevokedStatus(user))
 }
 
 func SaveAuthorizedUser(uuid string, email string, ip string, timeNow time.Time, refreshToken string, revokedToken string) {
