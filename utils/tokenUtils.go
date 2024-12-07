@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -17,15 +18,25 @@ import (
 var SecretKey = []byte("secret")
 
 func CheckTokenHash(token, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(token))
+	fmt.Println("RefreshToken: " + token)
+	fmt.Println("HashedToken: " + hash)
+	preprocessedToken := preprocessToken(token)
+	fmt.Println("RefreshToken: " + preprocessedToken)
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(preprocessedToken))
 	return err == nil
+}
+
+func preprocessToken(token string) string {
+	sha256Hasher := sha256.New()
+	sha256Hasher.Write([]byte(token))
+	hashedToken := sha256Hasher.Sum(nil)
+	return hex.EncodeToString(hashedToken)
 }
 
 func HashToken(token string) (string, error) {
 	sha256Hasher := sha256.New()
 	sha256Hasher.Write([]byte(token))
 	hashedToken := sha256Hasher.Sum(nil)
-
 	hexToken := hex.EncodeToString(hashedToken)
 
 	bcryptHash, err := bcrypt.GenerateFromPassword([]byte(hexToken), bcrypt.DefaultCost)
@@ -66,13 +77,14 @@ func GetIP(r *http.Request) (string, error) {
 	return "", fmt.Errorf("no valid ip found")
 }
 
-func CreateTokenPair(user storage.UserDTO) (string, string, error) {
+func CreateTokenPair(user storage.UserDTO, revokedToken string) (string, string, error) {
 	// Access токен тип JWT, алгоритм SHA512, хранить в базе строго запрещено.
 	currentTime := time.Now()
 
 	authClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"sub":   user.Uuid,
 		"email": user.Email,
+		"ip":    user.Ip,
 	})
 
 	authToken, err := authClaims.SignedString(SecretKey)
@@ -88,7 +100,8 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	// должен быть защищен от изменения на стороне клиента и попыток повторного использования.
 
 	rtClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
-		"sub": user.Uuid,
+		"email": user.Email,
+		"ip":    user.Ip,
 	})
 
 	refreshToken, err := rtClaims.SignedString(SecretKey)
@@ -107,8 +120,52 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	fmt.Println("Hashed RT: " + hashedRefreshToken)
 
 	// storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, refreshToken)
-	storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, hashedRefreshToken)
+	storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, hashedRefreshToken, revokedToken)
 
 	// Payload токенов должен содержать сведения об ip адресе клиента, которому он был выдан
 	return authToken, refreshToken, err
+}
+
+func ParseTokenClaims(token string) (jwt.MapClaims, error) {
+	claims := jwt.MapClaims{}
+	// Parse the claims
+	_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return SecretKey, nil
+	})
+
+	if err != nil {
+		if err == jwt.ErrSignatureInvalid {
+			fmt.Printf("%s\n", err)
+			return nil, err
+		}
+		fmt.Printf("%s\n", err)
+		return nil, err
+	}
+	return claims, nil
+}
+
+func IsAccessTokenExpired(user reflect.Value) bool {
+	// fmt.Printf("Now: %d and AT expires at %d", time.Now().Unix(), storage.ExpirationAccessToken(user))
+	return time.Now().After(time.Unix(storage.ExpirationAccessToken(user), 0).UTC())
+}
+
+func IsRefreshTokenExpired(user reflect.Value) bool {
+	// fmt.Printf("Now: %d and RT expires at %d", time.Now().Unix(), storage.ExpirationRefreshToken(user))
+	return time.Now().After(time.Unix(storage.ExpirationRefreshToken(user), 0).UTC())
+}
+
+func SetTokensIntoCookies(aToken, rToken string) (*http.Cookie, *http.Cookie) {
+	aCookie := &http.Cookie{
+		Name:  "AccessToken",
+		Value: aToken,
+		// MaxAge: 300,
+	}
+
+	rCookie := &http.Cookie{
+		Name:  "RefreshToken",
+		Value: rToken,
+		// MaxAge: 300,
+	}
+
+	return aCookie, rCookie
 }
