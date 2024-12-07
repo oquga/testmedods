@@ -30,23 +30,15 @@ func main() {
 
 		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
 
-			aToken, rToken, err := utils.CreateTokenPair(authUser)
-
+			aToken, rToken, err := utils.CreateTokenPair(authUser, "false")
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
 				return
 			}
 
-			cookie := &http.Cookie{
-				Name:  "RefreshToken",
-				Value: rToken,
-				// MaxAge: 300,
-			}
-			http.SetCookie(w, cookie)
-
-			// w.Write([]byte("AT:\n"))
-			w.Write([]byte(aToken))
-
+			aCookie, rCookie := utils.SetTokensIntoCookies(aToken, rToken)
+			http.SetCookie(w, aCookie)
+			http.SetCookie(w, rCookie)
 			w.WriteHeader(200)
 			return
 		}
@@ -57,19 +49,25 @@ func main() {
 		// Access, Refresh токены обоюдно связаны,
 		// Refresh операцию для Access токена можно выполнить только тем Refresh токеном который был выдан вместе с ним.
 
-		clientToken := r.Header.Get("Authorization")
-		if clientToken == "" {
-			fmt.Fprintf(w, "Authorization Token is required")
+		// clientToken := r.Header.Get("Authorization")
+		// if clientToken == "" {
+		// 	fmt.Fprintf(w, "Authorization Token is required")
+		// 	return
+		// }
+
+		accessToken, err := r.Cookie("AccessToken")
+		if err != nil {
+			fmt.Fprintf(w, "Access token is required in cookies")
 			return
 		}
 
 		refreshToken, err := r.Cookie("RefreshToken")
 		if err != nil {
-			fmt.Fprintf(w, "Refresh token is required")
+			fmt.Fprintf(w, "Refresh token is required in cookies")
 			return
 		}
 
-		aTokenString := strings.Join(strings.Split(clientToken, "Bearer "), "")
+		aTokenString := strings.Join(strings.Split(accessToken.String(), "AccessToken="), "")
 
 		claims, err := utils.ParseTokenClaims(aTokenString)
 		if err != nil {
@@ -120,14 +118,37 @@ func main() {
 
 		rTokenString := strings.Join(strings.Split(refreshToken.String(), "RefreshToken="), "")
 
-		if !utils.CheckTokenHash(rTokenString, storage.GetRefreshToken(currentUser)) {
-			fmt.Fprintf(w, "Token not credential")
+		if storage.GetRevokedStatus(currentUser) == rTokenString {
+			fmt.Fprintf(w, "Old Token is used to refresh one more time")
+			fmt.Fprintf(w, "All authorized sessions of that user will be ended")
+			storage.DeleteAuthorizedUser(currentUser)
 			return
 		}
 
-		// sendEmail("aslankaan460@gmail.com")
+		if !utils.CheckTokenHash(rTokenString, storage.GetRefreshToken(currentUser)) {
+			fmt.Fprintf(w, "Refresh Token not credential")
+			return
+		} else {
+			refreshedUser := storage.UserDTO{
+				Uuid:  storage.GetUUID(currentUser),
+				Email: storage.GetEmail(currentUser),
+				Ip:    storage.GetIP(currentUser),
+			}
 
-		fmt.Fprintf(w, "RT: "+rTokenString)
+			aToken, rToken, err := utils.CreateTokenPair(refreshedUser, rTokenString)
+			if err != nil {
+				http.Error(w, "Failed", http.StatusInternalServerError)
+				return
+			}
+
+			aCookie, rCookie := utils.SetTokensIntoCookies(aToken, rToken)
+
+			http.SetCookie(w, aCookie)
+			http.SetCookie(w, rCookie)
+			w.Write([]byte("Tokens are refreshed"))
+			w.WriteHeader(200)
+			return
+		}
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
