@@ -18,10 +18,7 @@ import (
 var SecretKey = []byte("secret")
 
 func CheckTokenHash(token, hash string) bool {
-	fmt.Println("RefreshToken: " + token)
-	fmt.Println("HashedToken: " + hash)
 	preprocessedToken := preprocessToken(token)
-	fmt.Println("RefreshToken: " + preprocessedToken)
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(preprocessedToken))
 	return err == nil
 }
@@ -85,6 +82,7 @@ func CreateTokenPair(user storage.UserDTO, revokedToken string) (string, string,
 		"sub":   user.Uuid,
 		"email": user.Email,
 		"ip":    user.Ip,
+		"iss":   currentTime.Unix(),
 	})
 
 	authToken, err := authClaims.SignedString(SecretKey)
@@ -93,8 +91,6 @@ func CreateTokenPair(user storage.UserDTO, revokedToken string) (string, string,
 		return "", "", err
 	}
 
-	// fmt.Printf("Auth Token: %+v\n", authClaims)
-
 	// Refresh токен тип произвольный, формат передачи base64,
 	// хранится в базе исключительно в виде bcrypt хеша,
 	// должен быть защищен от изменения на стороне клиента и попыток повторного использования.
@@ -102,6 +98,7 @@ func CreateTokenPair(user storage.UserDTO, revokedToken string) (string, string,
 	rtClaims := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
 		"email": user.Email,
 		"ip":    user.Ip,
+		"iss":   currentTime.Unix(),
 	})
 
 	refreshToken, err := rtClaims.SignedString(SecretKey)
@@ -113,13 +110,12 @@ func CreateTokenPair(user storage.UserDTO, revokedToken string) (string, string,
 	hashedRefreshToken, err := HashToken(refreshToken)
 	if err != nil {
 		fmt.Println(err)
-		// return "", "", err
+		return "", "", err
 	}
 
-	fmt.Println("RT: " + refreshToken)
-	fmt.Println("Hashed RT: " + hashedRefreshToken)
+	// fmt.Println("RT: " + refreshToken)
+	// fmt.Println("Hashed RT: " + hashedRefreshToken)
 
-	// storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, refreshToken)
 	storage.SaveAuthorizedUser(user.Uuid, user.Email, user.Ip, currentTime, hashedRefreshToken, revokedToken)
 
 	// Payload токенов должен содержать сведения об ip адресе клиента, которому он был выдан
