@@ -2,21 +2,36 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"testask.com/storage"
 	"testask.com/utils"
 )
 
-var RevokedMap map[string]bool //rToken: true, false
+func isValidEmail(email string) bool {
+	_, err := mail.ParseAddress(email)
+	return err == nil
+}
+
+func isValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}
+
+func isValidIP(ip string) bool {
+	return net.ParseIP(ip) != nil
+}
 
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		uuidClient := r.FormValue("uuid")
-		email := r.FormValue("email")
-
+		// requestUUID := r.FormValue("uuid")
+		requestEmail := r.FormValue("email")
+		requestUUID := r.Header.Get("X-Requested-With")
 		requestIp, err := utils.GetIP(r)
 		if err != nil {
 			w.WriteHeader(400)
@@ -24,12 +39,9 @@ func main() {
 			return
 		}
 
-		fmt.Printf("%s\n%s\n%s\n", email, requestIp, uuidClient)
-
-		authUser := storage.UserDTO{Uuid: uuidClient, Email: email, Ip: requestIp}
-
-		if email == "email" { // TODO: validate credentials, email: @mail.com; uuid: correct uuid;
-
+		// TODO: validate credentials, email: @mail.com; uuid: correct uuid;
+		if isValidIP(requestIp) && isValidEmail(requestEmail) && isValidUUID(requestUUID) {
+			authUser := storage.UserDTO{Uuid: requestUUID, Email: requestEmail, Ip: requestIp}
 			aToken, rToken, err := utils.CreateTokenPair(authUser, "false")
 			if err != nil {
 				http.Error(w, "Failed", http.StatusInternalServerError)
@@ -60,11 +72,13 @@ func main() {
 			return
 		}
 
-		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
+		currentUserUUID, err := claims.GetSubject()
 		if err != nil {
-			fmt.Fprintf(w, "UserNotFound")
+			fmt.Fprintf(w, "UUID is not credential")
 			return
 		}
+
+		currentUser := storage.GetUserByUUID(currentUserUUID)
 
 		if utils.IsRefreshTokenExpired(currentUser) {
 			fmt.Fprintf(w, "Refresh token expired")
@@ -161,12 +175,13 @@ func main() {
 			return
 		}
 
-		currentUser, err := storage.GetUserByUUID(claims.GetSubject())
-
+		currentUserUUID, err := claims.GetSubject()
 		if err != nil {
-			fmt.Printf("UserNotFound: %s\n", err)
+			fmt.Fprintf(w, "UUID is not credential")
 			return
 		}
+
+		currentUser := storage.GetUserByUUID(currentUserUUID)
 
 		userDTO := storage.UserDTO{Uuid: currentUser.FieldByName("uuid").String()}
 		for key, val := range claims {

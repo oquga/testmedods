@@ -50,13 +50,8 @@ func DeleteAuthorizedUser(user reflect.Value) {
 	delete(AuthSet, user.FieldByName("uuid").String())
 }
 
-func GetUserByUUID(uuid string, err error) (reflect.Value, error) {
-	if err != nil {
-		return reflect.ValueOf("User not found"), err
-	}
-
-	user := reflect.ValueOf(AuthSet[uuid])
-	return user, nil
+func GetUserByUUID(uuid string) reflect.Value {
+	return reflect.ValueOf(AuthSet[uuid])
 }
 
 func GetUUID(user reflect.Value) string {
