@@ -18,15 +18,25 @@ import (
 var SecretKey = []byte("secret")
 
 func CheckTokenHash(token, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(token))
+	fmt.Println("RefreshToken: " + token)
+	fmt.Println("HashedToken: " + hash)
+	preprocessedToken := preprocessToken(token)
+	fmt.Println("RefreshToken: " + preprocessedToken)
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(preprocessedToken))
 	return err == nil
 }
 
-func hashToken(token string) (string, error) {
+func preprocessToken(token string) string {
 	sha256Hasher := sha256.New()
 	sha256Hasher.Write([]byte(token))
 	hashedToken := sha256Hasher.Sum(nil)
+	return hex.EncodeToString(hashedToken)
+}
 
+func HashToken(token string) (string, error) {
+	sha256Hasher := sha256.New()
+	sha256Hasher.Write([]byte(token))
+	hashedToken := sha256Hasher.Sum(nil)
 	hexToken := hex.EncodeToString(hashedToken)
 
 	bcryptHash, err := bcrypt.GenerateFromPassword([]byte(hexToken), bcrypt.DefaultCost)
@@ -99,7 +109,7 @@ func CreateTokenPair(user storage.UserDTO) (string, string, error) {
 	}
 
 	//add to storage info about user: uuid, email, ip, issuedAt
-	hashedRefreshToken, err := hashToken(refreshToken)
+	hashedRefreshToken, err := HashToken(refreshToken)
 	if err != nil {
 		fmt.Println(err)
 		// return "", "", err
@@ -134,11 +144,11 @@ func ParseTokenClaims(token string) (jwt.MapClaims, error) {
 }
 
 func IsAccessTokenExpired(user reflect.Value) bool {
-	fmt.Printf("Now: %d and AT expires at %d", time.Now().Unix(), storage.ExpirationAccessToken(user))
+	// fmt.Printf("Now: %d and AT expires at %d", time.Now().Unix(), storage.ExpirationAccessToken(user))
 	return time.Now().After(time.Unix(storage.ExpirationAccessToken(user), 0).UTC())
 }
 
 func IsRefreshTokenExpired(user reflect.Value) bool {
-	fmt.Printf("Now: %d and RT expires at %d", time.Now().Unix(), storage.ExpirationRefreshToken(user))
+	// fmt.Printf("Now: %d and RT expires at %d", time.Now().Unix(), storage.ExpirationRefreshToken(user))
 	return time.Now().After(time.Unix(storage.ExpirationRefreshToken(user), 0).UTC())
 }

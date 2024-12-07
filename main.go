@@ -118,11 +118,16 @@ func main() {
 			}
 		}
 
+		rTokenString := strings.Join(strings.Split(refreshToken.String(), "RefreshToken="), "")
+
+		if !utils.CheckTokenHash(rTokenString, storage.GetRefreshToken(currentUser)) {
+			fmt.Fprintf(w, "Token not credential")
+			return
+		}
+
 		// sendEmail("aslankaan460@gmail.com")
 
-		rTokenString := refreshToken.String()
-
-		fmt.Fprintf(w, rTokenString)
+		fmt.Fprintf(w, "RT: "+rTokenString)
 	})
 
 	http.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
@@ -181,21 +186,3 @@ func main() {
 
 	http.ListenAndServe(":80", nil)
 }
-
-// func sendEmail(receiver string) {
-// 	// hostname is used by PlainAuth to validate the TLS certificate.
-// 	hostname := "mta.medods.test.com"
-// 	auth := smtp.PlainAuth("", "b10a731b2f948c50", "Yr1ZskVynyHHyKSB3YfDtF7c", hostname)
-
-// 	msg := `
-//   Subject: Testing from GoLang
-
-//   This is the message content!
-//   Thanks
-//   `
-// 	err := smtp.SendMail(hostname+":587", auth, "aslankaan460@gmail.com", []string{receiver},
-// 		[]byte(msg))
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// }
